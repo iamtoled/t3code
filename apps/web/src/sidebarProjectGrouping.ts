@@ -3,6 +3,7 @@ import type {
   ScopedProjectRef,
   SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
@@ -215,6 +216,26 @@ export function buildSidebarProjectSnapshots(
       archived: group.archived,
     };
   });
+}
+
+/**
+ * The copy a project row's New thread starts in: the last-used copy while it is open and
+ * connected, like the mobile thread list's filtered project; otherwise the group's representative.
+ */
+export function resolveProjectGroupNewThreadRef(
+  group: Pick<SidebarProjectSnapshot, "environmentId" | "id" | "memberProjects">,
+  lastUsedProjectKey: string | null,
+  connectedEnvironmentIds: ReadonlyArray<EnvironmentId>,
+): ScopedProjectRef {
+  const lastUsed = group.memberProjects.find(
+    (project) =>
+      isPickableProjectMember(project) &&
+      connectedEnvironmentIds.includes(project.environmentId) &&
+      scopedProjectKey(scopeProjectRef(project.environmentId, project.id)) === lastUsedProjectKey,
+  );
+  return lastUsed
+    ? scopeProjectRef(lastUsed.environmentId, lastUsed.id)
+    : scopeProjectRef(group.environmentId, group.id);
 }
 
 export function buildSidebarProjectPickerEntries(input: {

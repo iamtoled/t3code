@@ -1,6 +1,7 @@
 import { EnvironmentId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   deriveLogicalProjectKeyFromSettings,
   pickableProjectGroups,
@@ -8,6 +9,7 @@ import {
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
+  resolveProjectGroupNewThreadRef,
   resolveSidebarProjectScopeKey,
   getSidebarProjectSettingsKey,
 } from "./sidebarProjectGrouping";
@@ -340,5 +342,57 @@ describe("environment grouping", () => {
       preferredProjectRef: { environmentId: current.environmentId, projectId: current.id },
     });
     expect(entries.map((entry) => entry.group.displayName)).toEqual(["current", "pinned", "other"]);
+  });
+
+  describe("project row New thread target", () => {
+    const local = makeProject({ repositoryIdentity });
+    const remote = makeProject({
+      id: ProjectId.make("remote-copy"),
+      environmentId: remoteEnvironmentId,
+      workspaceRoot: "/remote/shared-repo",
+      repositoryIdentity,
+    });
+    const remoteKey = scopedProjectKey(scopeProjectRef(remote.environmentId, remote.id));
+    const groupOf = (projects: Project[]) => {
+      const [group] = buildSidebarProjectSnapshots({
+        projects,
+        settings: defaultGroupingSettings,
+        primaryEnvironmentId,
+        resolveEnvironmentLabel: () => null,
+      });
+      return group!;
+    };
+    const bothConnected = [primaryEnvironmentId, remoteEnvironmentId];
+
+    it("starts on the last-used copy's machine", () => {
+      expect(
+        resolveProjectGroupNewThreadRef(groupOf([local, remote]), remoteKey, bothConnected),
+      ).toEqual({ environmentId: remoteEnvironmentId, projectId: remote.id });
+    });
+
+    it("falls back to the representative when the last-used copy is offline", () => {
+      expect(
+        resolveProjectGroupNewThreadRef(groupOf([local, remote]), remoteKey, [
+          primaryEnvironmentId,
+        ]),
+      ).toEqual({ environmentId: primaryEnvironmentId, projectId: local.id });
+    });
+
+    it("falls back to the representative when the last-used copy is archived", () => {
+      const archivedRemote = { ...remote, archivedAt: "2026-01-02T00:00:00.000Z" };
+      expect(
+        resolveProjectGroupNewThreadRef(groupOf([local, archivedRemote]), remoteKey, bothConnected),
+      ).toEqual({ environmentId: primaryEnvironmentId, projectId: local.id });
+    });
+
+    it("ignores a last-used project from another group", () => {
+      expect(
+        resolveProjectGroupNewThreadRef(
+          groupOf([local, remote]),
+          scopedProjectKey(scopeProjectRef(remoteEnvironmentId, ProjectId.make("other-project"))),
+          bothConnected,
+        ),
+      ).toEqual({ environmentId: primaryEnvironmentId, projectId: local.id });
+    });
   });
 });
